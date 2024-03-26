@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Adafruit_Sensor.h>
 #include<DHT.h>
 
 # define DHTPIN 26
@@ -7,16 +8,13 @@
 DHT dht(DHTPIN,DHTTYPE); // Object declaraion
 
 
-// put function declarations here:
-int myFunction(int, int);
-
 void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+
+  
   dht.begin();  // Iniialize sensor
   delay(2000); // to get accurate values
 
-  Serial.begin(115200);
+  Serial.begin(9600);
 }
 
 void loop() {
@@ -27,14 +25,10 @@ void loop() {
   Serial.print("Temp : ");
   Serial.print(temp);
   Serial.print(" °C");
+  Serial.print(" ");
   Serial.print("Humidity : ");
   Serial.print(humidity);
   Serial.println("%");
+
   delay(2000);
-
-}
-
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
 }
