@@ -15,6 +15,12 @@ static volatile int64_t end_time = 0;
 #define RXD_PIN 16
 #define RX_BUF_SIZE 1024
 
+#define COM_RXD_PIN 26
+#define COM_TXD_PIN 27
+#define COM_BUF_SIZE 1024
+
+// Global varaibles : 
+uint16_t ppm ;
 /*******************************************************************/
 
 // Callback appelé lorsque le front montant est détecté sur le pin Echo
@@ -54,6 +60,9 @@ void distance_task(void *pvParameter) {
         // Vérifier si la distance mesurée est proche de la distance cible
         if (distance > DISTANCE_TARGET - 5 && distance < DISTANCE_TARGET + 5) {
             printf("Cible atteinte à %.2f cm!\n", distance);
+
+            // transmission 
+
         }
     }
 }
@@ -69,10 +78,16 @@ const uart_config_t uart_config = {
     .source_clk = UART_SCLK_APB,
 };
 
-void init_uart() {
+void init_uart1() {
     uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2, 0, 0, NULL, 0);
     uart_param_config(UART_NUM_1, &uart_config);
     uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+}
+
+void init_uart2(){
+    uart_driver_install(UART_NUM_2, COM_BUF_SIZE * 2, COM_BUF_SIZE * 2, 20, NULL, 0);
+    uart_param_config(UART_NUM_2, &uart_config);
+    uart_set_pin(UART_NUM_2, COM_TXD_PIN, COM_RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);   
 }
 
 void read_co2_concentration() {
@@ -84,12 +99,6 @@ void read_co2_concentration() {
 
     // Send command
     tx_bytes = uart_write_bytes(UART_NUM_1,cmd, 9);
-
-    /*
-    
-    
-    */
-    
 
     // Wait for response
     //vTaskDelay(1000 / portTICK_PERIOD_MS); // Wait for the response to be available
@@ -111,15 +120,16 @@ void read_co2_concentration() {
         }
         checksum = 0xFF - checksum;
         checksum += 1;
-
+        ppm = 55; 
         // Verify checksum
         if (rx_buffer[8] == checksum) {
             // Calculate CO2 concentration
             uint16_t high_byte = rx_buffer[2];
             uint16_t low_byte = rx_buffer[3];
-            uint16_t ppm = (high_byte << 8) | low_byte;
+            ppm = (high_byte << 8) | low_byte;
 
             // Print concentration
+    
             printf("CO2 concentration: %d ppm\n", ppm);
         } else {
             printf("Error: Incorrect checksum\n");
@@ -130,12 +140,26 @@ void read_co2_concentration() {
 }
 
 void co2_task(void *pvParameters) {
+    
     while (1) {
         read_co2_concentration();
+        printf("%d",ppm);
+        uart_write_bytes(UART_NUM_2, (char*)&ppm, sizeof(uint16_t));
         vTaskDelay(4000 / portTICK_PERIOD_MS); // Wait 4 seconds
     }
 }
 
+/*
+void sendData(void *pvParameters){
+    int i = 0 ;
+    uint16_t data = *(uint16_t *)pvParameters;
+    while(1){
+        uart_write_bytes(UART_NUM_2, (const char *)&data, sizeof(uint16_t));
+        printf("Num ° %d sent \n",i++);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+*/
 
 void app_main() {
     gpio_config_t io_conf;
@@ -162,38 +186,19 @@ void app_main() {
     // Créer la tâche pour mesurer la distance
     //xTaskCreate(distance_task, "distance_task", 2048, NULL, 5, NULL);
 
-    //********************************************************************************************//
-    
-    /*
-    // Configurer UART
-    const uart_config_t uart_config = {
-        .baud_rate = 9600,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_APB,
-    };
-    uart_driver_install(UART_NUM_1, 512, 512, 0, NULL, 0);
-    uart_param_config(UART_NUM_1, &uart_config);
-    uart_set_pin(UART_NUM_1, UART_TX_PIN, UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    /********************************************************************************************/
 
-    // Configurer PWM
-    
-    io_conf.mode = GPIO_MODE_INPUT;
-    io_conf.pin_bit_mask = (1ULL << PWM_PIN);
-    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    gpio_config(&io_conf);
-
-    xTaskCreate(task_read_serial, "read_serial_task", 2048, NULL, 5, NULL);
-    xTaskCreate(task_read_pwm, "read_pwm_task", 2048, NULL, 5, NULL);
-    
-    
-    */
-
-   init_uart();
+   init_uart1();
+   init_uart2();
+   
    xTaskCreate(co2_task, "co2_task", 4096, NULL, 5, NULL);
-    
+
+   /********************************************************************************************/
+
+   //uint16_t dataToSend = 42;
+   //ppm = 1900 ;
+   //xTaskCreate(&sendData, "sendDataTask", 2048, &ppm, 5, NULL);
+   
+   /********************************************************************************************/
     
 } 
