@@ -8,8 +8,10 @@
 #define TRIGGER_GPIO 33
 #define ECHO_GPIO 32
 #define DISTANCE_TARGET 50 // Distance de détection cible en centimètres
-static volatile int64_t start_time = 0;
-static volatile int64_t end_time = 0;
+
+volatile bool target_reached = false;
+SemaphoreHandle_t distance_semaphore;
+#define LED_GPIO 13
 
 #define TXD_PIN 17
 #define RXD_PIN 16
@@ -21,22 +23,28 @@ static volatile int64_t end_time = 0;
 
 // Global varaibles : 
 uint16_t ppm ;
+double distance ;
 /*******************************************************************/
 
+
 // Callback appelé lorsque le front montant est détecté sur le pin Echo
+
+/*
 void IRAM_ATTR echo_isr_handler(void *arg) {
+    
     int level = gpio_get_level(ECHO_GPIO);
     if (level == 1) {
         start_time = esp_timer_get_time();
     } else {
         end_time = esp_timer_get_time();
-    }
+    }   
 }
+*/
 
 // Tâche pour mesurer la distance et l'afficher
 void distance_task(void *pvParameter) {
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Mesurer toutes les 1 seconde
+        vTaskDelay(pdMS_TO_TICKS(1000)); 
 
         gpio_set_level(TRIGGER_GPIO, 1);
         esp_rom_delay_us(10);
@@ -52,21 +60,32 @@ void distance_task(void *pvParameter) {
         int64_t duration = end - start;
 
         // Calculer la distance en centimètres
-        double distance = (double)duration * 0.0343 / 2.0;
+        distance = (double)duration * 0.0343 / 2.0;
 
         // Afficher la distance mesurée
         printf("Distance: %.2f cm\n", distance);
 
         // Vérifier si la distance mesurée est proche de la distance cible
-        if (distance > DISTANCE_TARGET - 5 && distance < DISTANCE_TARGET + 5) {
+        if (distance < DISTANCE_TARGET ) {
             printf("Cible atteinte à %.2f cm!\n", distance);
-
-            // transmission 
-
+            target_reached = true;
+        }
+        else {
+            target_reached = false;
         }
     }
 }
-
+void signal_led(void *pvParameter){
+    while (1) {
+        if (target_reached) {
+            gpio_set_level(LED_GPIO, 1);
+            vTaskDelay(pdMS_TO_TICKS(3000)); 
+            gpio_set_level(LED_GPIO, 0);
+            target_reached = false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100)); // Delay before checking again
+    } 
+}
 //********************************************************************************************//
 
 const uart_config_t uart_config = {
@@ -120,7 +139,6 @@ void read_co2_concentration() {
         }
         checksum = 0xFF - checksum;
         checksum += 1;
-        ppm = 55; 
         // Verify checksum
         if (rx_buffer[8] == checksum) {
             // Calculate CO2 concentration
@@ -140,28 +158,15 @@ void read_co2_concentration() {
 }
 
 void co2_task(void *pvParameters) {
-    
     while (1) {
         read_co2_concentration();
-        printf("%d",ppm);
         uart_write_bytes(UART_NUM_2, (char*)&ppm, sizeof(uint16_t));
         vTaskDelay(4000 / portTICK_PERIOD_MS); // Wait 4 seconds
     }
 }
 
-/*
-void sendData(void *pvParameters){
-    int i = 0 ;
-    uint16_t data = *(uint16_t *)pvParameters;
-    while(1){
-        uart_write_bytes(UART_NUM_2, (const char *)&data, sizeof(uint16_t));
-        printf("Num ° %d sent \n",i++);
-        vTaskDelay(pdMS_TO_TICKS(2000));
-    }
-}
-*/
-
 void app_main() {
+
     gpio_config_t io_conf;
     // Configurer le pin Trigger comme output
     io_conf.intr_type = GPIO_INTR_DISABLE;
@@ -179,26 +184,28 @@ void app_main() {
     io_conf.pull_up_en = 0;
     gpio_config(&io_conf);
 
-    // Installer le gestionnaire d'interruption pour le pin Echo
-    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
-    gpio_isr_handler_add(ECHO_GPIO, echo_isr_handler, (void *)ECHO_GPIO);
+    // Configure the pin as output
+    io_conf.pin_bit_mask = (1ULL << LED_GPIO);
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE; // You can disable pull-up resistor
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE; // You can disable pull-down resistor
+    io_conf.intr_type = GPIO_INTR_DISABLE; // You can enable interrupts if needed
 
-    // Créer la tâche pour mesurer la distance
-    //xTaskCreate(distance_task, "distance_task", 2048, NULL, 5, NULL);
+    gpio_config(&io_conf);
+
+    /********************************************************************************************/
+
+    xTaskCreate(distance_task, "distance_task", 2048, NULL, 5, NULL);
 
     /********************************************************************************************/
 
    init_uart1();
    init_uart2();
-   
    xTaskCreate(co2_task, "co2_task", 4096, NULL, 5, NULL);
 
    /********************************************************************************************/
 
-   //uint16_t dataToSend = 42;
-   //ppm = 1900 ;
-   //xTaskCreate(&sendData, "sendDataTask", 2048, &ppm, 5, NULL);
-   
+   xTaskCreate(signal_led, "led_task", 2048, NULL, 5, NULL);
+
    /********************************************************************************************/
-    
 } 
