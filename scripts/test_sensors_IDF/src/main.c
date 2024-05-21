@@ -5,14 +5,15 @@
 #include "driver/uart.h"
 #include "esp_timer.h"
 
-#define TRIGGER_GPIO 33
-#define ECHO_GPIO 32
 #define DISTANCE_TARGET 50 // Distance de détection cible en centimètres
 
 volatile bool target_reached = false;
 SemaphoreHandle_t distance_semaphore;
-#define LED_GPIO 13
 
+#define TRIGGER_GPIO 33
+#define ECHO_GPIO 32
+
+#define LED_GPIO 13
 #define TXD_PIN 17
 #define RXD_PIN 16
 #define RX_BUF_SIZE 1024
@@ -24,22 +25,6 @@ SemaphoreHandle_t distance_semaphore;
 // Global varaibles : 
 uint16_t ppm ;
 double distance ;
-/*******************************************************************/
-
-
-// Callback appelé lorsque le front montant est détecté sur le pin Echo
-
-/*
-void IRAM_ATTR echo_isr_handler(void *arg) {
-    
-    int level = gpio_get_level(ECHO_GPIO);
-    if (level == 1) {
-        start_time = esp_timer_get_time();
-    } else {
-        end_time = esp_timer_get_time();
-    }   
-}
-*/
 
 // Tâche pour mesurer la distance et l'afficher
 void distance_task(void *pvParameter) {
@@ -87,7 +72,6 @@ void signal_led(void *pvParameter){
     } 
 }
 //********************************************************************************************//
-
 const uart_config_t uart_config = {
     .baud_rate = 9600,
     .data_bits = UART_DATA_8_BITS,
@@ -96,19 +80,19 @@ const uart_config_t uart_config = {
     .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
     .source_clk = UART_SCLK_APB,
 };
-
+//********************************************************************************************//
 void init_uart1() {
     uart_driver_install(UART_NUM_1, RX_BUF_SIZE * 2, 0, 0, NULL, 0);
     uart_param_config(UART_NUM_1, &uart_config);
     uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 }
-
+//********************************************************************************************//
 void init_uart2(){
     uart_driver_install(UART_NUM_2, COM_BUF_SIZE * 2, COM_BUF_SIZE * 2, 20, NULL, 0);
     uart_param_config(UART_NUM_2, &uart_config);
     uart_set_pin(UART_NUM_2, COM_TXD_PIN, COM_RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);   
 }
-
+//********************************************************************************************//
 void read_co2_concentration() {
     // Valeurs des bytes de la trame
   
@@ -116,11 +100,14 @@ void read_co2_concentration() {
     uint8_t rx_buffer[9];
     uint8_t rx_bytes , tx_bytes;
 
+
+    //uart_write_bytes(UART_NUM_1, "\xFF\x01\x99\x00\x00\x00\x13\x88\xCB", 9);
     // Send command
     tx_bytes = uart_write_bytes(UART_NUM_1,cmd, 9);
 
     // Wait for response
     //vTaskDelay(1000 / portTICK_PERIOD_MS); // Wait for the response to be available
+
 
     rx_bytes = uart_read_bytes(UART_NUM_1, rx_buffer, 9, 1000 / portTICK_PERIOD_MS);
 
@@ -155,8 +142,9 @@ void read_co2_concentration() {
     } else {
         printf("Error: Not enough bytes received\n");
     }
-}
 
+}
+//********************************************************************************************//
 void co2_task(void *pvParameters) {
     while (1) {
         read_co2_concentration();
@@ -164,7 +152,7 @@ void co2_task(void *pvParameters) {
         vTaskDelay(4000 / portTICK_PERIOD_MS); // Wait 4 seconds
     }
 }
-
+//********************************************************************************************//
 void app_main() {
 
     gpio_config_t io_conf;
@@ -194,18 +182,15 @@ void app_main() {
     gpio_config(&io_conf);
 
     /********************************************************************************************/
-
+    init_uart1();
+    init_uart2();
     xTaskCreate(distance_task, "distance_task", 2048, NULL, 5, NULL);
-
-    /********************************************************************************************/
-
-   init_uart1();
-   init_uart2();
-   xTaskCreate(co2_task, "co2_task", 4096, NULL, 5, NULL);
+    xTaskCreate(co2_task, "co2_task", 4096, NULL, 5, NULL);
+    xTaskCreate(signal_led, "led_task", 2048, NULL, 5, NULL);
 
    /********************************************************************************************/
 
-   xTaskCreate(signal_led, "led_task", 2048, NULL, 5, NULL);
+    
 
    /********************************************************************************************/
 } 
